@@ -87,6 +87,22 @@ Respond with ONLY a valid JSON array of skills:
 	resp = strings.TrimSuffix(resp, "```")
 	resp = strings.TrimSpace(resp)
 
+	// Fix trailing commas before ] or }
+	for _, pair := range [][2]string{{",]", "]"}, {",}", "}"}} {
+		resp = strings.ReplaceAll(resp, pair[0], pair[1])
+	}
+	// Also handle whitespace between comma and closing bracket
+	for strings.Contains(resp, ", ]") || strings.Contains(resp, ", }") ||
+		strings.Contains(resp, ",\n]") || strings.Contains(resp, ",\n}") ||
+		strings.Contains(resp, ",\n  ]") || strings.Contains(resp, ",\n  }") {
+		resp = strings.ReplaceAll(resp, ", ]", "]")
+		resp = strings.ReplaceAll(resp, ", }", "}")
+		resp = strings.ReplaceAll(resp, ",\n]", "\n]")
+		resp = strings.ReplaceAll(resp, ",\n}", "\n}")
+		resp = strings.ReplaceAll(resp, ",\n  ]", "\n  ]")
+		resp = strings.ReplaceAll(resp, ",\n  }", "\n  }")
+	}
+
 	var parsed []struct {
 		Name         string   `json:"name"`
 		Type         string   `json:"type"`
