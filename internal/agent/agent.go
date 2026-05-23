@@ -17,6 +17,16 @@ type File struct {
 	Content string
 }
 
+// ListFiles returns the relative paths of all text files that would be ingested.
+func ListFiles(dir string) []string {
+	files, _ := loadFiles(dir)
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	return paths
+}
+
 func IngestRepo(ctx context.Context, client *gemini.Client, dir string) ([]skill.Skill, error) {
 	files, err := loadFiles(dir)
 	if err != nil {

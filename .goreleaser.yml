@@ -1,0 +1,32 @@
+version: 2
+
+builds:
+  - main: ./cmd/mainstacks
+    binary: mainstacks
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+
+brews:
+  - repository:
+      owner: cjhargre
+      name: homebrew-tap
+    homepage: "https://github.com/cjhargre/mainstacks"
+    description: "A portable skill library for developers"
+    install: |
+      bin.install "mainstacks"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"

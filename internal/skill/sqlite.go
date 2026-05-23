@@ -47,6 +47,18 @@ func (s *SQLiteStore) Add(sk Skill) error {
 	return err
 }
 
+func (s *SQLiteStore) Exists(name string) bool {
+	var count int
+	s.db.QueryRow(`SELECT COUNT(*) FROM skills WHERE name = ? OR source = ?`, name, name).Scan(&count)
+	return count > 0
+}
+
+func (s *SQLiteStore) ExistsBySource(source string) bool {
+	var count int
+	s.db.QueryRow(`SELECT COUNT(*) FROM skills WHERE source = ?`, source).Scan(&count)
+	return count > 0
+}
+
 func (s *SQLiteStore) Count() int {
 	var count int
 	s.db.QueryRow(`SELECT COUNT(*) FROM skills`).Scan(&count)

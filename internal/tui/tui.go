@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cjhargre/mainstacks/internal/agent"
@@ -18,6 +19,7 @@ type view int
 
 const (
 	viewMenu view = iota
+	viewIngestInput
 	viewIngesting
 	viewBrowse
 	viewDetail
@@ -36,6 +38,9 @@ type Model struct {
 	browseCur  int
 	writeCur   int
 	selected   map[int]bool
+	browsesel  map[int]bool
+	confirming bool
+	input      textinput.Model
 	spinner    spinner.Model
 	client     *gemini.Client
 	store      *skill.SQLiteStore
@@ -68,7 +73,9 @@ var (
 func New(client *gemini.Client, store *skill.SQLiteStore) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	return Model{view: viewMenu, spinner: sp, client: client, store: store}
+	ti := textinput.New()
+	ti.Placeholder = "path (or enter for current directory)"
+	return Model{view: viewMenu, spinner: sp, input: ti, client: client, store: store}
 }
 
 func (m *Model) buildGroups() {
@@ -141,6 +148,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.view {
 	case viewMenu:
 		return m.updateMenu(msg)
+	case viewIngestInput:
+		return m.updateIngestInput(msg)
 	case viewIngesting:
 		return m.updateIngesting(msg)
 	case viewBrowse:
@@ -169,11 +178,10 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			switch m.cursor {
 			case 0:
-				m.view = viewIngesting
-				m.loading = true
-				m.skills = nil
-				m.err = nil
-				return m, tea.Batch(m.spinner.Tick, m.doIngest())
+				m.view = viewIngestInput
+				m.input.SetValue("")
+				m.input.Focus()
+				return m, textinput.Blink
 			case 1:
 				m.view = viewWrite
 				m.skills = m.store.All()
@@ -187,6 +195,8 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.skills = m.store.All()
 				m.buildGroups()
 				m.browseCur = 0
+				m.browsesel = make(map[int]bool)
+				m.confirming = false
 				m.skipToNextSkill(&m.browseCur, 1)
 				return m, nil
 			case 3:
@@ -195,6 +205,26 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) updateIngestInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "enter" {
+			path := m.input.Value()
+			if path == "" {
+				path, _ = os.Getwd()
+			}
+			m.view = viewIngesting
+			m.loading = true
+			m.skills = nil
+			m.err = nil
+			return m, tea.Batch(m.spinner.Tick, m.doIngestPath(path))
+		}
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
 func (m Model) updateIngesting(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -230,6 +260,30 @@ func (m *Model) skipToNextSkill(cur *int, dir int) {
 func (m Model) updateBrowse(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.confirming {
+			switch msg.String() {
+			case "y":
+				for idx, sel := range m.browsesel {
+					if sel {
+						m.store.Delete(m.skills[idx].Name)
+					}
+				}
+				m.skills = m.store.All()
+				m.buildGroups()
+				m.browsesel = make(map[int]bool)
+				m.confirming = false
+				if m.browseCur >= len(m.flatIndex) {
+					m.browseCur = len(m.flatIndex) - 1
+				}
+				if len(m.flatIndex) > 0 {
+					m.skipToNextSkill(&m.browseCur, -1)
+				}
+			case "n", "esc":
+				m.confirming = false
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "up", "k":
 			if m.browseCur > 0 {
@@ -246,16 +300,21 @@ func (m Model) updateBrowse(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = viewDetail
 			}
 			return m, nil
-		case "d":
+		case " ":
 			if len(m.flatIndex) > 0 && m.flatIndex[m.browseCur] >= 0 {
 				idx := m.flatIndex[m.browseCur]
-				m.store.Delete(m.skills[idx].Name)
-				m.skills = m.store.All()
-				m.buildGroups()
-				if m.browseCur >= len(m.flatIndex) {
-					m.browseCur = len(m.flatIndex) - 1
+				m.browsesel[idx] = !m.browsesel[idx]
+			}
+			return m, nil
+		case "d":
+			count := 0
+			for _, sel := range m.browsesel {
+				if sel {
+					count++
 				}
-				m.skipToNextSkill(&m.browseCur, -1)
+			}
+			if count > 0 {
+				m.confirming = true
 			}
 			return m, nil
 		}
@@ -307,7 +366,7 @@ func (m Model) View() string {
 
 	switch m.view {
 	case viewMenu:
-		items := []string{"Ingest this repo", "Write skills", "Browse skills", "Quit"}
+		items := []string{"Ingest repo", "Write skills", "Browse skills", "Quit"}
 		for i, item := range items {
 			if i == m.cursor {
 				b.WriteString(selectedStyle.Render("→ "+item) + "\n")
@@ -316,6 +375,11 @@ func (m Model) View() string {
 			}
 		}
 		b.WriteString("\n" + dimStyle.Render("j/k to move, enter to select, q to quit"))
+
+	case viewIngestInput:
+		b.WriteString("  Hit enter to ingest current directory, or type a path:\n\n")
+		b.WriteString("  " + m.input.View() + "\n")
+		b.WriteString("\n" + dimStyle.Render("esc to go back"))
 
 	case viewIngesting:
 		if m.loading {
@@ -334,8 +398,18 @@ func (m Model) View() string {
 		if len(m.skills) == 0 {
 			b.WriteString("  No skills in library yet. Ingest a repo first.\n")
 		} else {
-			b.WriteString(m.renderGroupedList(m.browseCur, false))
-			b.WriteString("\n" + dimStyle.Render("j/k to move, enter to view, d to delete, esc to go back"))
+			b.WriteString(m.renderBrowseList())
+			if m.confirming {
+				count := 0
+				for _, sel := range m.browsesel {
+					if sel {
+						count++
+					}
+				}
+				b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("  Delete %d skill(s)? (y/n)", count)))
+			} else {
+				b.WriteString("\n" + dimStyle.Render("j/k move, space select, enter view, d delete, esc back"))
+			}
 		}
 
 	case viewDetail:
@@ -383,6 +457,31 @@ func (m Model) View() string {
 	return b.String()
 }
 
+func (m Model) renderBrowseList() string {
+	var b strings.Builder
+	pos := 0
+	for _, grp := range m.groups {
+		b.WriteString(groupStyle.Render(fmt.Sprintf("%s (%d)", grp.name, len(grp.skills))) + "\n")
+		pos++
+		for _, idx := range grp.skills {
+			sk := m.skills[idx]
+			check := "○"
+			if m.browsesel[idx] {
+				check = successStyle.Render("●")
+			}
+			name := fmt.Sprintf("%s %s", check, sk.Name)
+			if pos == m.browseCur {
+				b.WriteString("    " + selectedStyle.Render("→ "+name) + "\n")
+			} else {
+				b.WriteString("      " + itemStyle.Render(name) + "\n")
+			}
+			pos++
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func (m Model) renderGroupedList(cursor int, showCheckbox bool) string {
 	var b strings.Builder
 	pos := 0
@@ -401,7 +500,11 @@ func (m Model) renderGroupedList(cursor int, showCheckbox bool) string {
 				}
 				prefix = check + " "
 			} else {
-				prefix = ""
+				if pos == cursor {
+					prefix = successStyle.Render("●") + " "
+				} else {
+					prefix = "○ "
+				}
 			}
 			name := fmt.Sprintf("%s%s", prefix, sk.Name)
 			if pos == cursor {
@@ -416,20 +519,17 @@ func (m Model) renderGroupedList(cursor int, showCheckbox bool) string {
 	return b.String()
 }
 
-func (m Model) doIngest() tea.Cmd {
+func (m Model) doIngestPath(path string) tea.Cmd {
 	return func() tea.Msg {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return ingestDoneMsg{err: err}
-		}
-
-		skills, err := agent.IngestRepo(context.Background(), m.client, cwd)
+		skills, err := agent.IngestRepo(context.Background(), m.client, path)
 		if err != nil {
 			return ingestDoneMsg{err: err}
 		}
 
 		for _, sk := range skills {
-			m.store.Add(sk)
+			if !m.store.Exists(sk.Name) && !m.store.ExistsBySource(sk.Source) {
+				m.store.Add(sk)
+			}
 		}
 
 		return ingestDoneMsg{skills: skills}
