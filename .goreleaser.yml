@@ -19,7 +19,7 @@ archives:
 
 brews:
   - repository:
-      owner: cjhargre
+      owner: cjhargreaves
       name: homebrew-tap
     homepage: "https://github.com/cjhargre/mainstacks"
     description: "A portable skill library for developers"
