@@ -1,0 +1,5 @@
+.env
+hopesandmemes
+skills.db
+*.exe
+/dist/
