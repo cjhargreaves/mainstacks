@@ -1,8 +1,8 @@
 # mainstacks
 
-A portable skill library for developers. Point it at any codebase and it extracts reusable skills — patterns, techniques, and knowledge — into a personal library you can query and write to any project.
+Build a library of reusable skills from code you've already written. Feed them to coding agents to ship faster.
 
-Skills aren't file summaries. They're transferable knowledge: the actual implementation pattern, what it does, when to use it, and what it depends on. Your library grows over time as you ingest more projects, and travels with you everywhere.
+Like a producer reusing loops they've made before, mainstacks lets you extract patterns from past projects and drop them into new ones. Your agents get context on how you build things, so they stop guessing and start building the way you would.
 
 ## Install
 
@@ -33,7 +33,7 @@ First run will ask for a [Google AI API key](https://aistudio.google.com/apikey)
 
 ### TUI
 
-Run `mainstacks` in any directory to open the interactive interface:
+Run `mainstacks` in any directory:
 
 ```
 ⚡ mainstacks (5 skills in library)
@@ -44,9 +44,9 @@ Run `mainstacks` in any directory to open the interactive interface:
   Quit
 ```
 
-- **Ingest repo** — scans a directory, extracts skills into your library
-- **Write skills** — select skills and write a `SKILLS.md` to the current directory
-- **Browse skills** — view, inspect, and delete skills from your library
+- **Ingest repo** - scans a directory, extracts skills into your library
+- **Write skills** - select skills and write a `SKILLS.md` to the current directory
+- **Browse skills** - view, inspect, and delete skills from your library
 
 ### CLI
 
@@ -62,6 +62,8 @@ mainstacks query "how do I implement stride-based indexing?"
 ```
 
 ## What's a skill?
+
+A skill is a pattern extracted from your code that you or an agent can reuse:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -87,10 +89,10 @@ mainstacks query "how do I implement stride-based indexing?"
 
 Skills are grouped by category:
 
-- **Patterns** — reusable code patterns, algorithms, implementations
-- **Infrastructure** — deployment, CI/CD, cloud configs
-- **Operations** — runbooks, procedures, checklists
-- **Design** — architecture decisions, system designs
+- **Patterns** - reusable code patterns, algorithms, implementations
+- **Infrastructure** - deployment, CI/CD, cloud configs
+- **Operations** - runbooks, procedures, checklists
+- **Design** - architecture decisions, system designs
 
 ## How it works
 
@@ -99,18 +101,18 @@ cd any-repo && mainstacks ingest .
          ↓
   Reads all text files (skips binaries, node_modules, etc.)
          ↓
-  Gemini 2.5 Flash analyzes the ENTIRE codebase at once
+  Analyzes the entire codebase at once
          ↓
   Extracts distinct, transferable skills (not one per file)
          ↓
-  Stores in ~/.mainstacks/skills.db (persists across projects)
+  Stores in ~/.mainstacks/skills.db
          ↓
   Write selected skills to SKILLS.md in any project
 ```
 
 ## Config
 
-Your API key and settings live at `~/.mainstacks/config`. The skill database lives at `~/.mainstacks/skills.db`. Everything is local — the only external call is to Google's Gemini API during ingestion.
+Your API key and settings live at `~/.mainstacks/config`. The skill database lives at `~/.mainstacks/skills.db`. Everything is local.
 
 ## License
 
