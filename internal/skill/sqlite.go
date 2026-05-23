@@ -2,8 +2,8 @@ package skill
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -20,11 +20,14 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS skills (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
 		type TEXT NOT NULL,
 		source TEXT NOT NULL,
+		tags TEXT NOT NULL DEFAULT '',
+		dependencies TEXT NOT NULL DEFAULT '',
 		summary TEXT NOT NULL,
-		chunks TEXT NOT NULL,
-		metadata TEXT NOT NULL
+		pattern TEXT NOT NULL DEFAULT '',
+		usage_info TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("create table: %w", err)
@@ -34,11 +37,12 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 }
 
 func (s *SQLiteStore) Add(sk Skill) error {
-	chunks, _ := json.Marshal(sk.Chunks)
-	meta, _ := json.Marshal(sk.Metadata)
 	_, err := s.db.Exec(
-		`INSERT INTO skills (type, source, summary, chunks, metadata) VALUES (?, ?, ?, ?, ?)`,
-		string(sk.Type), sk.Source, sk.Summary, string(chunks), string(meta),
+		`INSERT INTO skills (name, type, source, tags, dependencies, summary, pattern, usage_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		sk.Name, string(sk.Type), sk.Source,
+		strings.Join(sk.Tags, ","),
+		strings.Join(sk.Dependencies, ","),
+		sk.Summary, sk.Pattern, sk.Usage,
 	)
 	return err
 }
@@ -50,7 +54,7 @@ func (s *SQLiteStore) Count() int {
 }
 
 func (s *SQLiteStore) All() []Skill {
-	rows, err := s.db.Query(`SELECT type, source, summary, chunks, metadata FROM skills`)
+	rows, err := s.db.Query(`SELECT name, type, source, tags, dependencies, summary, pattern, usage_info FROM skills`)
 	if err != nil {
 		return nil
 	}
@@ -59,7 +63,7 @@ func (s *SQLiteStore) All() []Skill {
 }
 
 func (s *SQLiteStore) ByType(t Type) []Skill {
-	rows, err := s.db.Query(`SELECT type, source, summary, chunks, metadata FROM skills WHERE type = ?`, string(t))
+	rows, err := s.db.Query(`SELECT name, type, source, tags, dependencies, summary, pattern, usage_info FROM skills WHERE type = ?`, string(t))
 	if err != nil {
 		return nil
 	}
@@ -71,15 +75,24 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+func (s *SQLiteStore) Delete(name string) error {
+	_, err := s.db.Exec(`DELETE FROM skills WHERE name = ?`, name)
+	return err
+}
+
 func scanSkills(rows *sql.Rows) []Skill {
 	var skills []Skill
 	for rows.Next() {
 		var sk Skill
-		var t, chunksJSON, metaJSON string
-		rows.Scan(&t, &sk.Source, &sk.Summary, &chunksJSON, &metaJSON)
+		var t, tags, deps string
+		rows.Scan(&sk.Name, &t, &sk.Source, &tags, &deps, &sk.Summary, &sk.Pattern, &sk.Usage)
 		sk.Type = Type(t)
-		json.Unmarshal([]byte(chunksJSON), &sk.Chunks)
-		json.Unmarshal([]byte(metaJSON), &sk.Metadata)
+		if tags != "" {
+			sk.Tags = strings.Split(tags, ",")
+		}
+		if deps != "" {
+			sk.Dependencies = strings.Split(deps, ",")
+		}
 		skills = append(skills, sk)
 	}
 	return skills
