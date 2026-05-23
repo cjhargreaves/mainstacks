@@ -46,9 +46,20 @@ Run `mainstacks` in any directory:
 ```
 
 - **Ingest repo** — scans a directory, extracts skills into your library
+
+![ingest](./demo/ingest.gif)
+
 - **Write skills** — select skills and write a `SKILLS.md` to the current directory
+
+![write](./demo/write.gif)
+
 - **Browse skills** — view, inspect, and delete skills from your library
+
+![browse](./demo/browse.gif)
+
 - **Community Market** — browse, search, download, and upload skills shared by others
+
+![market](./demo/market.gif)
 
 ### Community Market
 
