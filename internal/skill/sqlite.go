@@ -92,6 +92,24 @@ func (s *SQLiteStore) Delete(name string) error {
 	return err
 }
 
+func (s *SQLiteStore) Get(name string) (Skill, bool) {
+	row := s.db.QueryRow(`SELECT name, type, source, tags, dependencies, summary, pattern, usage_info FROM skills WHERE name = ?`, name)
+	var sk Skill
+	var t, tags, deps string
+	err := row.Scan(&sk.Name, &t, &sk.Source, &tags, &deps, &sk.Summary, &sk.Pattern, &sk.Usage)
+	if err != nil {
+		return Skill{}, false
+	}
+	sk.Type = Type(t)
+	if tags != "" {
+		sk.Tags = strings.Split(tags, ",")
+	}
+	if deps != "" {
+		sk.Dependencies = strings.Split(deps, ",")
+	}
+	return sk, true
+}
+
 func scanSkills(rows *sql.Rows) []Skill {
 	var skills []Skill
 	for rows.Next() {

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cjhargre/mainstacks/internal/agent"
 	"github.com/cjhargre/mainstacks/internal/gemini"
+	"github.com/cjhargre/mainstacks/internal/hub"
 	"github.com/cjhargre/mainstacks/internal/skill"
 )
 
@@ -25,6 +26,11 @@ const (
 	viewDetail
 	viewWrite
 	viewWriteDone
+	viewCommunity     // community market sub-menu
+	viewCommunityList // browsing community skills
+	viewCommunitySearch
+	viewCommunityDetail
+	viewUploadSelect // pick a local skill to upload
 )
 
 type category struct {
@@ -44,11 +50,16 @@ type Model struct {
 	spinner    spinner.Model
 	client     *gemini.Client
 	store      *skill.SQLiteStore
+	hub        *hub.Client
 	err        error
 	loading    bool
 	skills     []skill.Skill
 	groups     []category
 	flatIndex  []int // maps flat cursor position → skill index (-1 for headers)
+	// community market
+	commCur    int
+	commSkills []hub.CommunitySkill
+	commMsg    string
 }
 
 type ingestDoneMsg struct {
@@ -57,6 +68,13 @@ type ingestDoneMsg struct {
 }
 
 type writeDoneMsg struct{ err error }
+
+type communityBrowseMsg struct {
+	skills []hub.CommunitySkill
+	err    error
+}
+
+type communityPublishMsg struct{ err error }
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
@@ -70,12 +88,12 @@ var (
 	groupStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).PaddingLeft(2)
 )
 
-func New(client *gemini.Client, store *skill.SQLiteStore) Model {
+func New(client *gemini.Client, store *skill.SQLiteStore, hubClient *hub.Client) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	ti := textinput.New()
 	ti.Placeholder = "path (or enter for current directory)"
-	return Model{view: viewMenu, spinner: sp, input: ti, client: client, store: store}
+	return Model{view: viewMenu, spinner: sp, input: ti, client: client, store: store, hub: hubClient}
 }
 
 func (m *Model) buildGroups() {
@@ -129,6 +147,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = viewBrowse
 				return m, nil
 			}
+			if m.view == viewCommunityDetail {
+				m.view = viewCommunityList
+				return m, nil
+			}
+			if m.view == viewCommunityList {
+				m.view = viewCommunity
+				m.commMsg = ""
+				return m, nil
+			}
+			if m.view == viewCommunitySearch {
+				m.view = viewCommunity
+				m.commMsg = ""
+				return m, nil
+			}
+			if m.view == viewCommunity || m.view == viewUploadSelect {
+				m.view = viewMenu
+				m.commMsg = ""
+				return m, nil
+			}
 			m.view = viewMenu
 			m.err = nil
 			m.loading = false
@@ -136,6 +173,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			if m.view == viewDetail {
 				m.view = viewBrowse
+				return m, nil
+			}
+			if m.view == viewCommunityDetail {
+				m.view = viewCommunityList
+				return m, nil
+			}
+			if m.view == viewCommunityList {
+				m.view = viewCommunity
+				m.commMsg = ""
+				return m, nil
+			}
+			if m.view == viewCommunitySearch {
+				m.view = viewCommunity
+				m.commMsg = ""
+				return m, nil
+			}
+			if m.view == viewCommunity || m.view == viewUploadSelect {
+				m.view = viewMenu
+				m.commMsg = ""
 				return m, nil
 			}
 			m.view = viewMenu
@@ -156,6 +212,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBrowse(msg)
 	case viewWrite:
 		return m.updateWrite(msg)
+	case viewCommunity:
+		return m.updateCommunity(msg)
+	case viewCommunitySearch:
+		return m.updateCommunitySearch(msg)
+	case viewCommunityList:
+		return m.updateCommunityList(msg)
+	case viewCommunityDetail:
+		return m.updateCommunityDetail(msg)
+	case viewUploadSelect:
+		return m.updateUploadSelect(msg)
 	case viewDetail:
 		return m, nil
 	default:
@@ -172,7 +238,7 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < 3 {
+			if m.cursor < 4 {
 				m.cursor++
 			}
 		case "enter":
@@ -200,6 +266,11 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.skipToNextSkill(&m.browseCur, 1)
 				return m, nil
 			case 3:
+				m.view = viewCommunity
+				m.commCur = 0
+				m.err = nil
+				return m, nil
+			case 4:
 				return m, tea.Quit
 			}
 		}
@@ -360,13 +431,217 @@ func (m Model) updateWrite(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) updateCommunity(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.commCur > 0 {
+				m.commCur--
+			}
+		case "down", "j":
+			if m.commCur < 3 {
+				m.commCur++
+			}
+		case "enter":
+			switch m.commCur {
+			case 0: // Browse
+				m.view = viewCommunityList
+				m.loading = true
+				m.commSkills = nil
+				m.commMsg = ""
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, m.doBrowseCommunity())
+			case 1: // Search
+				m.view = viewCommunitySearch
+				m.input.SetValue("")
+				m.input.Placeholder = "search community skills..."
+				m.input.Focus()
+				m.commMsg = ""
+				m.err = nil
+				return m, textinput.Blink
+			case 2: // Upload
+				m.view = viewUploadSelect
+				m.skills = m.store.All()
+				m.buildGroups()
+				m.writeCur = 0
+				m.skipToNextSkill(&m.writeCur, 1)
+				m.selected = make(map[int]bool)
+				m.err = nil
+				m.commMsg = ""
+				return m, nil
+			case 3: // Back
+				m.view = viewMenu
+				return m, nil
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateCommunitySearch(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "enter" {
+			query := m.input.Value()
+			if query == "" {
+				return m, nil
+			}
+			m.view = viewCommunityList
+			m.loading = true
+			m.commSkills = nil
+			m.commMsg = ""
+			m.err = nil
+			return m, tea.Batch(m.spinner.Tick, m.doSearchCommunity(query))
+		}
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateCommunityList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case communityBrowseMsg:
+		m.loading = false
+		m.err = msg.err
+		m.commSkills = msg.skills
+		m.commCur = 0
+		return m, nil
+	case spinner.TickMsg:
+		if m.loading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+	case tea.KeyMsg:
+		if m.loading {
+			return m, nil
+		}
+		switch msg.String() {
+		case "up", "k":
+			if m.commCur > 0 {
+				m.commCur--
+			}
+		case "down", "j":
+			if m.commCur < len(m.commSkills)-1 {
+				m.commCur++
+			}
+		case "enter":
+			if len(m.commSkills) > 0 {
+				m.view = viewCommunityDetail
+			}
+			return m, nil
+		case "d":
+			// Download selected skill into local library
+			if len(m.commSkills) > 0 {
+				cs := m.commSkills[m.commCur]
+				if m.store.Exists(cs.Name) {
+					m.commMsg = "Already in library: " + cs.Name
+				} else {
+					m.store.Add(cs.Skill)
+					m.commMsg = "✓ Downloaded: " + cs.Name
+				}
+			}
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateCommunityDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "q":
+			m.view = viewCommunityList
+			return m, nil
+		case "d":
+			cs := m.commSkills[m.commCur]
+			if m.store.Exists(cs.Name) {
+				m.commMsg = "Already in library: " + cs.Name
+			} else {
+				m.store.Add(cs.Skill)
+				m.commMsg = "✓ Downloaded: " + cs.Name
+			}
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateUploadSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case communityPublishMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.commMsg = "✓ Published to community!"
+		}
+		return m, nil
+	case spinner.TickMsg:
+		if m.loading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+	case tea.KeyMsg:
+		if m.loading {
+			return m, nil
+		}
+		switch msg.String() {
+		case "up", "k":
+			if m.writeCur > 0 {
+				m.writeCur--
+				m.skipToNextSkill(&m.writeCur, -1)
+			}
+		case "down", "j":
+			if m.writeCur < len(m.flatIndex)-1 {
+				m.writeCur++
+				m.skipToNextSkill(&m.writeCur, 1)
+			}
+		case "enter":
+			if len(m.flatIndex) > 0 && m.flatIndex[m.writeCur] >= 0 {
+				sk := m.skills[m.flatIndex[m.writeCur]]
+				m.loading = true
+				m.commMsg = ""
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, m.doPublish(sk))
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m Model) doBrowseCommunity() tea.Cmd {
+	return func() tea.Msg {
+		skills, err := m.hub.Browse()
+		return communityBrowseMsg{skills: skills, err: err}
+	}
+}
+
+func (m Model) doSearchCommunity(query string) tea.Cmd {
+	return func() tea.Msg {
+		skills, err := m.hub.Search(query)
+		return communityBrowseMsg{skills: skills, err: err}
+	}
+}
+
+func (m Model) doPublish(sk skill.Skill) tea.Cmd {
+	return func() tea.Msg {
+		err := m.hub.Publish(sk, "anonymous")
+		return communityPublishMsg{err: err}
+	}
+}
+
 func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("⚡ mainstacks") + dimStyle.Render(fmt.Sprintf(" (%d skills in library)", m.store.Count())) + "\n\n")
 
 	switch m.view {
 	case viewMenu:
-		items := []string{"Ingest repo", "Write skills", "Browse skills", "Quit"}
+		items := []string{"Ingest repo", "Write skills", "Browse skills", "Community Market", "Quit"}
 		for i, item := range items {
 			if i == m.cursor {
 				b.WriteString(selectedStyle.Render("→ "+item) + "\n")
@@ -452,6 +727,89 @@ func (m Model) View() string {
 			b.WriteString("  " + successStyle.Render("✓ SKILLS.md written to current directory") + "\n")
 		}
 		b.WriteString("\n" + dimStyle.Render("esc to go back"))
+
+	case viewCommunity:
+		b.WriteString(headerStyle.Render("  Community Market") + "\n\n")
+		items := []string{"Browse & download skills", "Search skills", "Upload a skill", "Back"}
+		for i, item := range items {
+			if i == m.commCur {
+				b.WriteString(selectedStyle.Render("  → "+item) + "\n")
+			} else {
+				b.WriteString(itemStyle.Render("    "+item) + "\n")
+			}
+		}
+		b.WriteString("\n" + dimStyle.Render("j/k to move, enter to select, esc to go back"))
+
+	case viewCommunitySearch:
+		b.WriteString(headerStyle.Render("  Search Community") + "\n\n")
+		b.WriteString("  " + m.input.View() + "\n")
+		b.WriteString("\n" + dimStyle.Render("enter to search, esc to go back"))
+
+	case viewCommunityList:
+		b.WriteString(headerStyle.Render("  Community Skills") + "\n\n")
+		if m.loading {
+			b.WriteString("  " + m.spinner.View() + " Loading community skills...\n")
+		} else if m.err != nil {
+			b.WriteString("  " + errorStyle.Render("Error: "+m.err.Error()) + "\n")
+		} else if len(m.commSkills) == 0 {
+			b.WriteString("  No skills published yet. Be the first!\n")
+		} else {
+			for i, cs := range m.commSkills {
+				prefix := "  "
+				if i == m.commCur {
+					prefix = selectedStyle.Render("→ ")
+				}
+				author := ""
+				if cs.Author != "" {
+					author = dimStyle.Render(" by "+cs.Author)
+				}
+				b.WriteString(fmt.Sprintf("  %s%s [%s]%s\n", prefix, cs.Name, string(cs.Type), author))
+			}
+		}
+		if m.commMsg != "" {
+			b.WriteString("\n  " + successStyle.Render(m.commMsg) + "\n")
+		}
+		b.WriteString("\n" + dimStyle.Render("j/k move, enter view, d download, esc back"))
+
+	case viewCommunityDetail:
+		if len(m.commSkills) > 0 {
+			cs := m.commSkills[m.commCur]
+			b.WriteString(headerStyle.Render("  "+cs.Name) + "\n\n")
+			b.WriteString(fmt.Sprintf("  Type:    %s\n", string(cs.Type)))
+			b.WriteString(fmt.Sprintf("  Source:  %s\n", cs.Source))
+			if cs.Author != "" {
+				b.WriteString(fmt.Sprintf("  Author:  %s\n", cs.Author))
+			}
+			if len(cs.Tags) > 0 {
+				b.WriteString(fmt.Sprintf("  Tags:    %s\n", tagStyle.Render(strings.Join(cs.Tags, ", "))))
+			}
+			b.WriteString("\n")
+			b.WriteString(wrapIndent(cs.Summary, "  ", 72))
+			if cs.Pattern != "" {
+				b.WriteString("\n\n" + dimStyle.Render("  Pattern:") + "\n")
+				b.WriteString(wrapIndent(cs.Pattern, "    ", 72))
+			}
+			if m.commMsg != "" {
+				b.WriteString("\n\n  " + successStyle.Render(m.commMsg))
+			}
+		}
+		b.WriteString("\n\n" + dimStyle.Render("d to download, esc to go back"))
+
+	case viewUploadSelect:
+		b.WriteString(headerStyle.Render("  Upload to Community") + "\n\n")
+		if m.loading {
+			b.WriteString("  " + m.spinner.View() + " Publishing...\n")
+		} else if m.err != nil {
+			b.WriteString("  " + errorStyle.Render(m.err.Error()) + "\n")
+		} else if m.commMsg != "" {
+			b.WriteString("  " + successStyle.Render(m.commMsg) + "\n")
+		} else if len(m.skills) == 0 {
+			b.WriteString("  No skills in library. Ingest a repo first.\n")
+		} else {
+			b.WriteString("  Select a skill to publish:\n\n")
+			b.WriteString(m.renderGroupedList(m.writeCur, false))
+		}
+		b.WriteString("\n" + dimStyle.Render("j/k move, enter to publish, esc back"))
 	}
 
 	return b.String()
