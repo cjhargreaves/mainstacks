@@ -1,4 +1,4 @@
-# hopesandmemes
+# mainstacks
 
 Agent skill ingestion system powered by Gemini 2.5 Flash + Go.
 
@@ -9,7 +9,7 @@ Drop any file — code, runbooks, infra docs, Terraform, proto — specialist ag
 ```bash
 cp .env.example .env
 # Add your Gemini API key
-go build ./cmd/hopesandmemes
+go build ./cmd/mainstacks
 ```
 
 ## Architecture
@@ -22,7 +22,7 @@ Classifier Agent (Gemini 2.5 Flash)
 ┌──────┬──────┬──────┬──────┐
 Code  Runbook Infra  Proto  Terraform
       ↓
-Skill Store (in-memory)
+Skill Store (SQLite)
       ↓
 Router Agent (Gemini 2.5 Flash)
 ```
@@ -30,6 +30,5 @@ Router Agent (Gemini 2.5 Flash)
 ## Usage
 
 ```bash
-export GEMINI_API_KEY=your-key
-./hopesandmemes
+./mainstacks
 ```

@@ -11,10 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/cjhargre/hopesandmemes/internal/agent"
-	"github.com/cjhargre/hopesandmemes/internal/gemini"
-	"github.com/cjhargre/hopesandmemes/internal/router"
-	"github.com/cjhargre/hopesandmemes/internal/skill"
+	"github.com/cjhargre/mainstacks/internal/agent"
+	"github.com/cjhargre/mainstacks/internal/gemini"
+	"github.com/cjhargre/mainstacks/internal/router"
+	"github.com/cjhargre/mainstacks/internal/skill"
 )
 
 type view int
@@ -232,7 +232,7 @@ func (m Model) updateBrowse(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("⚡ hopesandmemes") + "\n")
+	b.WriteString(titleStyle.Render("⚡ mainstacks") + "\n")
 	b.WriteString(dimStyle.Render(fmt.Sprintf("  %d skills ingested", m.store.Count())) + "\n\n")
 
 	switch m.view {

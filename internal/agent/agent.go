@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cjhargre/hopesandmemes/internal/gemini"
-	"github.com/cjhargre/hopesandmemes/internal/skill"
+	"github.com/cjhargre/mainstacks/internal/gemini"
+	"github.com/cjhargre/mainstacks/internal/skill"
 )
 
 type File struct {
