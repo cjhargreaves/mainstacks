@@ -1,92 +1,117 @@
 # mainstacks
 
-A portable skill library for developers. Ingest any codebase, extract reusable knowledge as "skills," and write them to any project as a `SKILLS.md`.
+A portable skill library for developers. Point it at any codebase and it extracts reusable skills — patterns, techniques, and knowledge — into a personal library you can query and write to any project.
+
+Skills aren't file summaries. They're transferable knowledge: the actual implementation pattern, what it does, when to use it, and what it depends on. Your library grows over time as you ingest more projects, and travels with you everywhere.
 
 ## Install
 
 ```bash
+brew tap cjhargreaves/tap
 brew install mainstacks
 ```
 
-## How it works
+Or build from source:
 
 ```bash
-cd my-project
+git clone https://github.com/cjhargreaves/mainstacks.git
+cd mainstacks
+go build ./cmd/mainstacks
+cp mainstacks ~/.local/bin/
+```
+
+## Quick start
+
+```bash
+cd ~/my-project
 mainstacks
 ```
 
-That's it. You get a TUI with three options:
+First run will ask for a [Google AI API key](https://aistudio.google.com/apikey) (free tier works).
+
+## Usage
+
+### TUI
+
+Run `mainstacks` in any directory to open the interactive interface:
 
 ```
-⚡ mainstacks (12 skills in library)
+⚡ mainstacks (5 skills in library)
 
-→ Ingest this repo        # scan current directory, extract skills
-  Write skills            # pick skills from your library → writes SKILLS.md here
-  Browse skills           # see everything in your library
+→ Ingest repo
+  Write skills
+  Browse skills
+  Quit
 ```
 
-### Ingest
+- **Ingest repo** — scans a directory, extracts skills into your library
+- **Write skills** — select skills and write a `SKILLS.md` to the current directory
+- **Browse skills** — view, inspect, and delete skills from your library
 
-Scans the current directory. Gemini 2.5 Flash classifies each file and specialist agents extract structured skills — what it does, how to use it, dependencies, tags. Skills are saved to your personal library (persists across projects).
+### CLI
 
-### Write skills
+```bash
+# Ingest current directory
+mainstacks ingest .
 
-Pick skills from your library to include in this project. Writes a `SKILLS.md` file to the current directory — a portable knowledge doc that anyone on the team can read, or that AI tools can use as context.
+# Ingest a specific path
+mainstacks ingest ~/projects/my-api
 
-### Browse skills
-
-View all skills in your library with type, tags, and a short description.
+# Ask a question against your skill library
+mainstacks query "how do I implement stride-based indexing?"
+```
 
 ## What's a skill?
 
-A skill is a structured piece of knowledge extracted from code:
-
 ```
-┌─────────────────────────────────────────┐
-│ Name: gRPC Auth Interceptor             │
-│ Type: code                              │
-│ Source: payments-service/auth.go        │
-│ Tags: [grpc, auth, middleware]          │
-│ Dependencies: [google.golang.org/grpc]  │
-│ Summary: Server-side unary interceptor  │
-│   that validates JWT tokens from the    │
-│   metadata header and injects user      │
-│   claims into the context.              │
-│ Usage: Add to grpc.NewServer() chain    │
-│   with grpc.UnaryInterceptor(AuthFn)    │
-└─────────────────────────────────────────┘
-```
-
-## Architecture
-
-```
-cd any-repo && mainstacks
-         ↓
-  Classifier Agent (Gemini 2.5 Flash)
-         ↓
-  ┌──────┬──────┬──────┬──────┐
-  Code  Runbook Infra  Proto  Terraform
-  Agent  Agent  Agent  Agent   Agent
-         ↓
-  Skill Library (~/.mainstacks/skills.db)
-         ↓
-  Write to SKILLS.md in any project
+┌─────────────────────────────────────────────────────┐
+│ Name:    gRPC Auth Interceptor                      │
+│ Type:    code                                       │
+│ Source:  auth.go, middleware.go                     │
+│ Tags:    grpc, auth, middleware                     │
+│ Deps:    google.golang.org/grpc                     │
+│                                                     │
+│ Summary: Server-side unary interceptor that         │
+│   validates JWT tokens and injects claims           │
+│   into the context.                                 │
+│                                                     │
+│ Pattern:                                            │
+│   func AuthInterceptor(ctx context.Context,         │
+│     req interface{}, info *grpc.UnaryServerInfo,    │
+│     handler grpc.UnaryHandler) (interface{}, error) │
+│                                                     │
+│ Usage: Add to grpc.NewServer() chain with           │
+│   grpc.UnaryInterceptor(AuthInterceptor)            │
+└─────────────────────────────────────────────────────┘
 ```
 
-## Setup (for development)
+Skills are grouped by category:
 
-```bash
-cp .env.example .env
-# Add your Gemini API key
-go build ./cmd/mainstacks
+- **Patterns** — reusable code patterns, algorithms, implementations
+- **Infrastructure** — deployment, CI/CD, cloud configs
+- **Operations** — runbooks, procedures, checklists
+- **Design** — architecture decisions, system designs
+
+## How it works
+
+```
+cd any-repo && mainstacks ingest .
+         ↓
+  Reads all text files (skips binaries, node_modules, etc.)
+         ↓
+  Gemini 2.5 Flash analyzes the ENTIRE codebase at once
+         ↓
+  Extracts distinct, transferable skills (not one per file)
+         ↓
+  Stores in ~/.mainstacks/skills.db (persists across projects)
+         ↓
+  Write selected skills to SKILLS.md in any project
 ```
 
 ## Config
 
-Set your Gemini API key once:
+Your API key and settings live at `~/.mainstacks/config`. The skill database lives at `~/.mainstacks/skills.db`. Everything is local — the only external call is to Google's Gemini API during ingestion.
 
-```bash
-export GEMINI_API_KEY=your-key
-```
+## License
 
-Or add it to `~/.mainstacks/config`.
+MIT
