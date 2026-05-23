@@ -41,12 +41,33 @@ Run `mainstacks` in any directory:
 → Ingest repo
   Write skills
   Browse skills
+  Community Market
   Quit
 ```
 
-- **Ingest repo** - scans a directory, extracts skills into your library
-- **Write skills** - select skills and write a `SKILLS.md` to the current directory
-- **Browse skills** - view, inspect, and delete skills from your library
+- **Ingest repo** — scans a directory, extracts skills into your library
+- **Write skills** — select skills and write a `SKILLS.md` to the current directory
+- **Browse skills** — view, inspect, and delete skills from your library
+- **Community Market** — browse, search, download, and upload skills shared by others
+
+### Community Market
+
+Share skills with other developers and discover new ones:
+
+```
+⚡ mainstacks → Community Market
+
+→ Browse & download skills
+  Search skills
+  Upload a skill
+  Back
+```
+
+- **Browse & download** — see all community skills, press `d` to add one to your library
+- **Search** — filter community skills by name, tags, or description
+- **Upload** — publish a skill from your library (requires `GITHUB_TOKEN`)
+
+Browsing and downloading works with no setup. To publish skills, set `GITHUB_TOKEN` in your environment.
 
 ### CLI
 
@@ -59,6 +80,12 @@ mainstacks ingest ~/projects/my-api
 
 # Ask a question against your skill library
 mainstacks query "how do I implement stride-based indexing?"
+
+# Browse community skills
+mainstacks community
+
+# Publish a skill to the community
+mainstacks publish "gRPC Auth Interceptor"
 ```
 
 ## What's a skill?
@@ -89,10 +116,10 @@ A skill is a pattern extracted from your code that you or an agent can reuse:
 
 Skills are grouped by category:
 
-- **Patterns** - reusable code patterns, algorithms, implementations
-- **Infrastructure** - deployment, CI/CD, cloud configs
-- **Operations** - runbooks, procedures, checklists
-- **Design** - architecture decisions, system designs
+- **Patterns** — reusable code patterns, algorithms, implementations
+- **Infrastructure** — deployment, CI/CD, cloud configs
+- **Operations** — runbooks, procedures, checklists
+- **Design** — architecture decisions, system designs
 
 ## How it works
 
@@ -109,6 +136,10 @@ cd any-repo && mainstacks ingest .
          ↓
   Write selected skills to SKILLS.md in any project
 ```
+
+## Community Hub
+
+The community marketplace is backed by [mainstacks-hub](https://github.com/cjhargreaves/mainstacks-hub). Skills are stored as JSON files in the `skills/` directory. No account needed to browse — it's a public repo.
 
 ## Config
 
